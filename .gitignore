@@ -1,0 +1,46 @@
+# Python / Django
+__pycache__/
+*.py[cod]
+*.so
+*.egg-info/
+*.log
+*.sqlite3
+db.sqlite3
+.env
+env/
+venv/
+ENV/
+staticfiles/
+media/
+
+# IDEs & tooling
+.vscode/
+.idea/
+*.iml
+.DS_Store
+
+# Flutter / Dart
+.dart_tool/
+.packages
+.flutter-plugins
+.flutter-plugins-dependencies
+.melos_tool/
+build/
+ios/Flutter/Flutter.podspec
+ios/Flutter/Generated.xcconfig
+ios/Flutter/ephemeral/
+macos/Flutter/GeneratedPluginRegistrant.swift
+android/app/google-services.json
+android/key.properties
+linux/flutter/
+windows/flutter/
+web/flutter.js.map
+
+# Generated files
+**/GeneratedPluginRegistrant.*
+**/generated_plugin_registrant.*
+**/generated_plugin_registrant.dart
+
+# Misc
+*.swp
+Thumbs.db
