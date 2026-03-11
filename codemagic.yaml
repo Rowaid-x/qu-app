@@ -25,12 +25,19 @@ workflows:
       - name: Install CocoaPods
         script: |
           cd ios && pod install
+      - name: Fetch signing files
+        script: |
+          app-store-connect fetch-signing-files com.rowaidx.qucommunity \
+            --type IOS_APP_STORE \
+            --create \
+            --platform IOS
       - name: Set up code signing
         script: |
           xcode-project use-profiles
       - name: Build iOS
         script: |
-          flutter build ipa --release --export-options-plist=/Users/builder/export_options.plist
+          flutter build ipa --release \
+            --export-options-plist=/Users/builder/export_options.plist
     artifacts:
       - build/ios/ipa/*.ipa
       - build/ios/archive/*.xcarchive
