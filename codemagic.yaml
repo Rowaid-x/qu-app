@@ -4,7 +4,7 @@ workflows:
     max_build_duration: 60
     instance_type: mac_mini_m2
     integrations:
-      app_store_connect: Codemagic
+      app_store_connect: codemagic2
     environment:
       flutter: 3.32.0
       xcode: latest
@@ -25,14 +25,6 @@ workflows:
       - name: Install CocoaPods
         script: |
           cd ios && pod install
-      - name: Delete old certificates and create new ones
-        script: |
-          app-store-connect certificates list --type IOS_DISTRIBUTION || true
-          app-store-connect fetch-signing-files com.rowaidx.qucommunity \
-            --type IOS_APP_STORE \
-            --create \
-            --platform IOS \
-            --create-certificate-if-not-exist
       - name: Set up code signing
         script: |
           xcode-project use-profiles
