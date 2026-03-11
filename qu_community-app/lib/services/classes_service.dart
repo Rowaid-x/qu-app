@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import '../models/course.dart';
 import 'api_service.dart';
 
@@ -14,22 +15,29 @@ class ClassesService {
       if (params.isNotEmpty) path += '?${params.join('&')}';
 
       final response = await ApiService.getAuth(path);
+      debugPrint('[ClassesService] getAllCourses status=${response.statusCode}');
+      debugPrint('[ClassesService] getAllCourses body=${response.body.substring(0, response.body.length > 200 ? 200 : response.body.length)}');
       if (response.statusCode == 200) {
         final List<dynamic> data = jsonDecode(response.body);
         return data.map((json) => Course.fromJson(json)).toList();
       }
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('[ClassesService] getAllCourses ERROR: $e');
+    }
     return [];
   }
 
   static Future<List<Course>> getJoinedCourses() async {
     try {
       final response = await ApiService.getAuth('/classes/joined/');
+      debugPrint('[ClassesService] getJoinedCourses status=${response.statusCode}');
       if (response.statusCode == 200) {
         final List<dynamic> data = jsonDecode(response.body);
         return data.map((json) => Course.fromJson(json)).toList();
       }
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('[ClassesService] getJoinedCourses ERROR: $e');
+    }
     return [];
   }
 
