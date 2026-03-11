@@ -1,18 +1,17 @@
 import 'dart:convert';
-import 'dart:io';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
 class ApiService {
-  // ── Change this to your computer's local IP when testing on a real device ──
-  // Android emulator uses 10.0.2.2 to reach host machine's localhost
-  // iOS simulator can use localhost / 127.0.0.1
-  // Real device: use your computer's Wi-Fi IP (e.g. 192.168.1.x)
+  // Production server URL
+  // For local testing on Android emulator use http://10.0.2.2:8000/api
+  // For local testing on iOS simulator / desktop use http://127.0.0.1:8000/api
   static String get baseUrl {
-    if (Platform.isAndroid) {
-      return 'http://10.0.2.2:8000/api';
+    if (kIsWeb) {
+      return 'http://qu-community-app.info/api';
     }
-    return 'http://127.0.0.1:8000/api';
+    return 'http://qu-community-app.info/api';
   }
 
   // ── Token keys in SharedPreferences ──

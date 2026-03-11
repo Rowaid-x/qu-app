@@ -21,18 +21,15 @@ class Course {
   final String location;
   final String createdBy;
   final ClassType type;
-  final List<String> schedule; // e.g., ["Sun 10:00-11:30", "Tue 10:00-11:30"]
+  final List<String> schedule;
   final int maxStudents;
   final int credits;
   final DateTime createdAt;
   final EventCategory category;
-  
-  // Dynamic properties
+
   int enrolledCount;
   bool isJoined;
   bool isFavorite;
-  List<String> enrolledStudents;
-  List<CalendarEvent> events;
 
   Course({
     required this.id,
@@ -50,8 +47,6 @@ class Course {
     this.enrolledCount = 0,
     this.isJoined = false,
     this.isFavorite = false,
-    this.enrolledStudents = const [],
-    this.events = const [],
   });
 
   Course copyWith({
@@ -70,8 +65,6 @@ class Course {
     int? enrolledCount,
     bool? isJoined,
     bool? isFavorite,
-    List<String>? enrolledStudents,
-    List<CalendarEvent>? events,
   }) {
     return Course(
       id: id ?? this.id,
@@ -89,51 +82,78 @@ class Course {
       enrolledCount: enrolledCount ?? this.enrolledCount,
       isJoined: isJoined ?? this.isJoined,
       isFavorite: isFavorite ?? this.isFavorite,
-      enrolledStudents: enrolledStudents ?? this.enrolledStudents,
-      events: events ?? this.events,
     );
   }
 
-  Map<String, dynamic> toJson() {
-    return {
-      'id': id,
-      'name': name,
-      'description': description,
-      'instructor': instructor,
-      'location': location,
-      'createdBy': createdBy,
-      'type': type.index,
-      'schedule': schedule,
-      'maxStudents': maxStudents,
-      'credits': credits,
-      'createdAt': createdAt.toIso8601String(),
-      'category': category.index,
-      'enrolledCount': enrolledCount,
-      'isJoined': isJoined,
-      'isFavorite': isFavorite,
-      'enrolledStudents': enrolledStudents,
-    };
+  static ClassType _parseClassType(String? value) {
+    switch (value) {
+      case 'official':
+        return ClassType.official;
+      case 'student_created':
+        return ClassType.studentCreated;
+      default:
+        return ClassType.official;
+    }
+  }
+
+  static EventCategory _parseCategory(String? value) {
+    switch (value) {
+      case 'academic':
+        return EventCategory.academic;
+      case 'social':
+        return EventCategory.social;
+      case 'sports':
+        return EventCategory.sports;
+      case 'creative':
+        return EventCategory.creative;
+      case 'career':
+        return EventCategory.career;
+      case 'food':
+        return EventCategory.food;
+      default:
+        return EventCategory.other;
+    }
   }
 
   factory Course.fromJson(Map<String, dynamic> json) {
     return Course(
-      id: json['id'],
-      name: json['name'],
-      description: json['description'],
-      instructor: json['instructor'],
-      location: json['location'],
-      createdBy: json['createdBy'],
-      type: ClassType.values[json['type']],
-      schedule: List<String>.from(json['schedule']),
-      maxStudents: json['maxStudents'],
+      id: json['id'].toString(),
+      name: json['name'] ?? '',
+      description: json['description'] ?? '',
+      instructor: json['instructor'] ?? '',
+      location: json['location'] ?? '',
+      createdBy: json['created_by_email'] ?? 'system',
+      type: _parseClassType(json['class_type']),
+      schedule: List<String>.from(json['schedule'] ?? []),
+      maxStudents: json['max_students'] ?? 60,
       credits: json['credits'] ?? 3,
-      createdAt: DateTime.parse(json['createdAt']),
-      category: EventCategory.values[json['category'] ?? 0],
-      enrolledCount: json['enrolledCount'] ?? 0,
-      isJoined: json['isJoined'] ?? false,
-      isFavorite: json['isFavorite'] ?? false,
-      enrolledStudents: List<String>.from(json['enrolledStudents'] ?? []),
+      createdAt: json['created_at'] != null
+          ? DateTime.parse(json['created_at'])
+          : DateTime.now(),
+      category: _parseCategory(json['category']),
+      enrolledCount: json['enrolled_count'] ?? 0,
+      isJoined: json['is_joined'] ?? false,
+      isFavorite: json['is_favorite'] ?? false,
     );
+  }
+
+  String get categoryString {
+    switch (category) {
+      case EventCategory.academic:
+        return 'academic';
+      case EventCategory.social:
+        return 'social';
+      case EventCategory.sports:
+        return 'sports';
+      case EventCategory.creative:
+        return 'creative';
+      case EventCategory.career:
+        return 'career';
+      case EventCategory.food:
+        return 'food';
+      case EventCategory.other:
+        return 'other';
+    }
   }
 }
 
@@ -159,9 +179,7 @@ class CalendarEvent {
   final String? classId;
   final EventCategory category;
   final bool isPublic;
-  
-  // Dynamic properties
-  List<String> attendees;
+  final int attendeeCount;
   bool isGoing;
 
   CalendarEvent({
@@ -176,86 +194,74 @@ class CalendarEvent {
     this.classId,
     this.category = EventCategory.academic,
     this.isPublic = true,
-    this.attendees = const [],
+    this.attendeeCount = 0,
     this.isGoing = false,
   });
 
-  CalendarEvent copyWith({
-    String? id,
-    String? title,
-    String? description,
-    String? location,
-    DateTime? startTime,
-    DateTime? endTime,
-    EventType? type,
-    String? addedBy,
-    String? classId,
-    EventCategory? category,
-    bool? isPublic,
-    List<String>? attendees,
-    bool? isGoing,
-  }) {
-    return CalendarEvent(
-      id: id ?? this.id,
-      title: title ?? this.title,
-      description: description ?? this.description,
-      location: location ?? this.location,
-      startTime: startTime ?? this.startTime,
-      endTime: endTime ?? this.endTime,
-      type: type ?? this.type,
-      addedBy: addedBy ?? this.addedBy,
-      classId: classId ?? this.classId,
-      category: category ?? this.category,
-      isPublic: isPublic ?? this.isPublic,
-      attendees: attendees ?? this.attendees,
-      isGoing: isGoing ?? this.isGoing,
-    );
+  static EventType _parseEventType(String? value) {
+    switch (value) {
+      case 'class_session':
+        return EventType.classSession;
+      case 'assignment':
+        return EventType.assignment;
+      case 'exam':
+        return EventType.exam;
+      case 'study_group':
+        return EventType.studyGroup;
+      case 'campus_event':
+        return EventType.campusEvent;
+      case 'social_event':
+        return EventType.socialEvent;
+      default:
+        return EventType.other;
+    }
   }
 
-  Map<String, dynamic> toJson() {
-    return {
-      'id': id,
-      'title': title,
-      'description': description,
-      'location': location,
-      'startTime': startTime.toIso8601String(),
-      'endTime': endTime.toIso8601String(),
-      'type': type.index,
-      'addedBy': addedBy,
-      'classId': classId,
-      'category': category.index,
-      'isPublic': isPublic,
-      'attendees': attendees,
-      'isGoing': isGoing,
-    };
+  static String eventTypeToString(EventType type) {
+    switch (type) {
+      case EventType.classSession:
+        return 'class_session';
+      case EventType.assignment:
+        return 'assignment';
+      case EventType.exam:
+        return 'exam';
+      case EventType.studyGroup:
+        return 'study_group';
+      case EventType.campusEvent:
+        return 'campus_event';
+      case EventType.socialEvent:
+        return 'social_event';
+      case EventType.other:
+        return 'other';
+    }
   }
 
   factory CalendarEvent.fromJson(Map<String, dynamic> json) {
     return CalendarEvent(
-      id: json['id'],
-      title: json['title'],
-      description: json['description'],
-      location: json['location'],
-      startTime: DateTime.parse(json['startTime']),
-      endTime: DateTime.parse(json['endTime']),
-      type: EventType.values[json['type']],
-      addedBy: json['addedBy'],
-      classId: json['classId'],
-      category: EventCategory.values[json['category'] ?? 0],
-      isPublic: json['isPublic'] ?? true,
-      attendees: List<String>.from(json['attendees'] ?? []),
-      isGoing: json['isGoing'] ?? false,
+      id: json['id'].toString(),
+      title: json['title'] ?? '',
+      description: json['description'] ?? '',
+      location: json['location'] ?? '',
+      startTime: DateTime.parse(json['start_time']),
+      endTime: DateTime.parse(json['end_time']),
+      type: _parseEventType(json['event_type']),
+      addedBy: json['added_by_email'] ?? 'system',
+      classId: json['course_id'],
+      category: Course._parseCategory(json['category']),
+      isPublic: json['is_public'] ?? true,
+      attendeeCount: json['attendee_count'] ?? 0,
+      isGoing: json['is_going'] ?? false,
     );
   }
 
   Duration get duration => endTime.difference(startTime);
-  
+
   bool get isToday {
     final now = DateTime.now();
     return startTime.year == now.year &&
            startTime.month == now.month &&
            startTime.day == now.day;
   }
-  
+
   bool get isUpcoming => startTime.isAfter(DateTime.now());
 }

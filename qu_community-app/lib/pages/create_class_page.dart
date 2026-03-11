@@ -13,6 +13,7 @@ class _CreateClassPageState extends State<CreateClassPage> {
   final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
   final _descriptionController = TextEditingController();
+  final _instructorController = TextEditingController();
   final _locationController = TextEditingController();
   final _maxStudentsController = TextEditingController();
   final _creditsController = TextEditingController();
@@ -40,6 +41,7 @@ class _CreateClassPageState extends State<CreateClassPage> {
   void dispose() {
     _nameController.dispose();
     _descriptionController.dispose();
+    _instructorController.dispose();
     _locationController.dispose();
     _maxStudentsController.dispose();
     _creditsController.dispose();
@@ -105,13 +107,39 @@ class _CreateClassPageState extends State<CreateClassPage> {
     });
 
     try {
+      String categoryStr;
+      switch (_selectedCategory) {
+        case EventCategory.academic:
+          categoryStr = 'academic';
+          break;
+        case EventCategory.creative:
+          categoryStr = 'creative';
+          break;
+        case EventCategory.sports:
+          categoryStr = 'sports';
+          break;
+        case EventCategory.social:
+          categoryStr = 'social';
+          break;
+        case EventCategory.career:
+          categoryStr = 'career';
+          break;
+        case EventCategory.food:
+          categoryStr = 'food';
+          break;
+        case EventCategory.other:
+          categoryStr = 'other';
+          break;
+      }
+
       final success = await ClassesService.createClass(
         name: _nameController.text.trim(),
         description: _descriptionController.text.trim(),
+        instructor: _instructorController.text.trim(),
         location: _locationController.text.trim(),
         schedule: _schedule,
         maxStudents: int.parse(_maxStudentsController.text),
-        category: _selectedCategory,
+        category: categoryStr,
         credits: int.parse(_creditsController.text),
       );
 
@@ -228,6 +256,30 @@ class _CreateClassPageState extends State<CreateClassPage> {
               ),
               const SizedBox(height: 16),
 
+              // Instructor
+              TextFormField(
+                controller: _instructorController,
+                decoration: InputDecoration(
+                  labelText: 'Instructor / Host *',
+                  hintText: 'e.g., Your name',
+                  prefixIcon: const Icon(Icons.person),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: const BorderSide(color: primaryMaroon),
+                  ),
+                ),
+                validator: (value) {
+                  if (value == null || value.trim().isEmpty) {
+                    return 'Please enter an instructor name';
+                  }
+                  return null;
+                },
+              ),
+              const SizedBox(height: 16),
+
               // Description
               TextFormField(
                 controller: _descriptionController,
@@ -279,7 +331,7 @@ class _CreateClassPageState extends State<CreateClassPage> {
 
               // Category
               DropdownButtonFormField<EventCategory>(
-                initialValue: _selectedCategory,
+                value: _selectedCategory,
                 decoration: InputDecoration(
                   labelText: 'Category',
                   prefixIcon: const Icon(Icons.category),

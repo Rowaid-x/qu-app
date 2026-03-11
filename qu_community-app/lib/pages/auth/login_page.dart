@@ -153,7 +153,7 @@ class _LoginPageState extends State<LoginPage> {
                           _passwordController.clear();
                         });
                       },
-                      activeThumbColor: primaryMaroon,
+                      activeColor: primaryMaroon,
                     ),
                     Text(
                       'Bus Driver',

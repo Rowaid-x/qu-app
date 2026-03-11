@@ -45,5 +45,9 @@
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>QU Community needs your location to show your position on the bus map and send location updates as a bus driver.</string>
+	<key>NSLocationAlwaysUsageDescription</key>
+	<string>QU Community needs your location to provide continuous bus tracking while driving.</string>
 </dict>
 </plist>

@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:table_calendar/table_calendar.dart';
 import '../models/course.dart';
 import '../services/classes_service.dart';
-import '../services/auth_service.dart';
 
 class CalendarPage extends StatefulWidget {
   const CalendarPage({super.key});
@@ -114,7 +113,7 @@ class _CalendarPageState extends State<CalendarPage> {
                 // Calendar Widget
                 TableCalendar<CalendarEvent>(
                   firstDay: DateTime.utc(2024, 1, 1),
-                  lastDay: DateTime.utc(2025, 12, 31),
+                  lastDay: DateTime.utc(2030, 12, 31),
                   focusedDay: _focusedDay,
                   calendarFormat: _calendarFormat,
                   eventLoader: _getEventsForDay,
@@ -343,7 +342,7 @@ class _CalendarPageState extends State<CalendarPage> {
                     ],
                   ),
                 ),
-                if (event.attendees.isNotEmpty)
+                if (event.attendeeCount > 0)
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                     decoration: BoxDecoration(
@@ -356,7 +355,7 @@ class _CalendarPageState extends State<CalendarPage> {
                         Icon(Icons.people, size: 14, color: Colors.grey[600]),
                         const SizedBox(width: 4),
                         Text(
-                          '${event.attendees.length}',
+                          '${event.attendeeCount}',
                           style: TextStyle(
                             fontSize: 12,
                             color: Colors.grey[600],
@@ -497,7 +496,6 @@ class _AddEventDialogState extends State<_AddEventDialog> {
   final _locationController = TextEditingController();
   
   EventType _selectedType = EventType.socialEvent;
-  final EventCategory _selectedCategory = EventCategory.social;
   TimeOfDay _startTime = const TimeOfDay(hour: 18, minute: 0);
   TimeOfDay _endTime = const TimeOfDay(hour: 20, minute: 0);
   bool _isLoading = false;
@@ -537,9 +535,6 @@ class _AddEventDialogState extends State<_AddEventDialog> {
     });
 
     try {
-      final currentUser = await AuthService.getCurrentUserEmail();
-      if (currentUser == null) return;
-
       final startDateTime = DateTime(
         widget.selectedDate.year,
         widget.selectedDate.month,
@@ -556,21 +551,16 @@ class _AddEventDialogState extends State<_AddEventDialog> {
         _endTime.minute,
       );
 
-      final event = CalendarEvent(
-        id: DateTime.now().millisecondsSinceEpoch.toString(),
+      final success = await ClassesService.addEvent(
         title: _titleController.text.trim(),
         description: _descriptionController.text.trim(),
         location: _locationController.text.trim(),
         startTime: startDateTime,
         endTime: endDateTime,
-        type: _selectedType,
-        addedBy: currentUser,
-        category: _selectedCategory,
-        isPublic: true,
+        eventType: CalendarEvent.eventTypeToString(_selectedType),
+        category: 'social',
       );
 
-      final success = await ClassesService.addEvent(event);
-      
       if (success) {
         widget.onEventAdded();
         if (mounted) {
@@ -579,6 +569,15 @@ class _AddEventDialogState extends State<_AddEventDialog> {
             const SnackBar(
               content: Text('Event added successfully!'),
               backgroundColor: Colors.green,
+            ),
+          );
+        }
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Failed to add event. Please try again.'),
+              backgroundColor: Colors.red,
             ),
           );
         }
@@ -654,7 +653,7 @@ class _AddEventDialogState extends State<_AddEventDialog> {
               const SizedBox(height: 16),
               
               DropdownButtonFormField<EventType>(
-                initialValue: _selectedType,
+                value: _selectedType,
                 decoration: const InputDecoration(labelText: 'Event Type'),
                 items: [
                   EventType.socialEvent,

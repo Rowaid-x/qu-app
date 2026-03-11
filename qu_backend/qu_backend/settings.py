@@ -46,6 +46,9 @@ INSTALLED_APPS = [
     # Local apps
     'accounts',
     'dashboard',
+    'classes',
+    'events',
+    'bus',
 ]
 
 MIDDLEWARE = [
