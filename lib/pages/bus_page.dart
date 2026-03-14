@@ -1,5 +1,7 @@
 import 'dart:async';
+import 'dart:math' show sin, cos, sqrt, atan2;
 import 'package:flutter/material.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import '../models/bus.dart';
 import '../services/bus_service.dart';
@@ -584,7 +586,7 @@ class _BusDetailSheet extends StatelessWidget {
 }
 
 // ═══════════════════════════════════════════════════════════
-// DRIVER DASHBOARD — Update status, start/end trips
+// DRIVER DASHBOARD — Live GPS tracking + status controls
 // ═══════════════════════════════════════════════════════════
 
 class _DriverDashboard extends StatefulWidget {
@@ -602,10 +604,18 @@ class _DriverDashboardState extends State<_DriverDashboard> {
   bool _isTripActive = false;
   String _selectedStatus = 'on_route';
   String _selectedOccupancy = 'empty';
+
+  // GPS state
+  StreamSubscription<Position>? _positionStream;
+  Position? _lastPosition;
+  DateTime? _lastSentAt;
   String _currentStop = '';
   String _nextStop = '';
-  Timer? _autoUpdateTimer;
-  bool _isSending = false;
+  bool _gpsError = false;
+  String _gpsErrorMsg = '';
+  int _updateCount = 0;
+
+  static const int _sendIntervalSeconds = 10;
 
   @override
   void initState() {
@@ -615,7 +625,7 @@ class _DriverDashboardState extends State<_DriverDashboard> {
 
   @override
   void dispose() {
-    _autoUpdateTimer?.cancel();
+    _positionStream?.cancel();
     super.dispose();
   }
 
@@ -629,39 +639,154 @@ class _DriverDashboardState extends State<_DriverDashboard> {
         if (bus?.latestLocation != null) {
           _selectedStatus = bus!.latestLocation!.status;
           _selectedOccupancy = bus.latestLocation!.occupancy;
-          _currentStop = bus.latestLocation!.currentStop;
-          _nextStop = bus.latestLocation!.nextStop;
-        } else if (bus?.route != null && bus!.route!.stops.isNotEmpty) {
-          _currentStop = bus.route!.stops.first.name;
-          if (bus.route!.stops.length > 1) {
-            _nextStop = bus.route!.stops[1].name;
-          }
         }
       });
       if (_isTripActive) {
-        _startAutoUpdate();
+        _startGpsTracking();
       }
     }
   }
 
-  void _startAutoUpdate() {
-    _autoUpdateTimer?.cancel();
-    _autoUpdateTimer = Timer.periodic(const Duration(seconds: 30), (_) {
-      _sendLocationUpdate();
-    });
+  // ── GPS helpers ──
+
+  /// Haversine distance in meters between two lat/lng points
+  double _distanceMeters(double lat1, double lon1, double lat2, double lon2) {
+    const R = 6371000.0; // Earth radius in meters
+    final dLat = (lat2 - lat1) * 3.14159265 / 180;
+    final dLon = (lon2 - lon1) * 3.14159265 / 180;
+    final a = sin(dLat / 2) * sin(dLat / 2) +
+        cos(lat1 * 3.14159265 / 180) *
+            cos(lat2 * 3.14159265 / 180) *
+            sin(dLon / 2) *
+            sin(dLon / 2);
+    final c = 2 * atan2(sqrt(a), sqrt(1 - a));
+    return R * c;
   }
 
-  void _stopAutoUpdate() {
-    _autoUpdateTimer?.cancel();
-    _autoUpdateTimer = null;
+  /// Find nearest stop and next stop from current GPS position
+  void _updateNearestStop(double lat, double lng) {
+    if (_myBus?.route == null || _myBus!.route!.stops.isEmpty) return;
+
+    final stops = _myBus!.route!.stops;
+    double minDist = double.infinity;
+    int nearestIdx = 0;
+
+    for (int i = 0; i < stops.length; i++) {
+      final d = _distanceMeters(lat, lng, stops[i].lat, stops[i].lng);
+      if (d < minDist) {
+        minDist = d;
+        nearestIdx = i;
+      }
+    }
+
+    _currentStop = stops[nearestIdx].name;
+    _nextStop = (nearestIdx < stops.length - 1)
+        ? stops[nearestIdx + 1].name
+        : '';
   }
+
+  Future<bool> _checkLocationPermission() async {
+    bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+    if (!serviceEnabled) {
+      setState(() {
+        _gpsError = true;
+        _gpsErrorMsg = 'Location services are disabled. Please enable GPS.';
+      });
+      return false;
+    }
+
+    LocationPermission permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+      if (permission == LocationPermission.denied) {
+        setState(() {
+          _gpsError = true;
+          _gpsErrorMsg = 'Location permission denied.';
+        });
+        return false;
+      }
+    }
+
+    if (permission == LocationPermission.deniedForever) {
+      setState(() {
+        _gpsError = true;
+        _gpsErrorMsg = 'Location permission permanently denied. Enable in Settings.';
+      });
+      return false;
+    }
+
+    setState(() => _gpsError = false);
+    return true;
+  }
+
+  Future<void> _startGpsTracking() async {
+    final ok = await _checkLocationPermission();
+    if (!ok) return;
+
+    _positionStream?.cancel();
+    _positionStream = Geolocator.getPositionStream(
+      locationSettings: const LocationSettings(
+        accuracy: LocationAccuracy.high,
+        distanceFilter: 5, // meters — only fire when moved 5m+
+      ),
+    ).listen(
+      (Position position) {
+        if (!mounted) return;
+        setState(() => _lastPosition = position);
+        _updateNearestStop(position.latitude, position.longitude);
+        _maybeSendUpdate(position);
+      },
+      onError: (error) {
+        if (mounted) {
+          setState(() {
+            _gpsError = true;
+            _gpsErrorMsg = 'GPS error: $error';
+          });
+        }
+      },
+    );
+  }
+
+  void _stopGpsTracking() {
+    _positionStream?.cancel();
+    _positionStream = null;
+  }
+
+  /// Send location to backend, throttled to once every _sendIntervalSeconds
+  Future<void> _maybeSendUpdate(Position position) async {
+    final now = DateTime.now();
+    if (_lastSentAt != null &&
+        now.difference(_lastSentAt!).inSeconds < _sendIntervalSeconds) {
+      return;
+    }
+    _lastSentAt = now;
+
+    await BusService.updateLocation(
+      latitude: position.latitude,
+      longitude: position.longitude,
+      currentStop: _currentStop,
+      nextStop: _nextStop,
+      status: _selectedStatus,
+      occupancy: _selectedOccupancy,
+    );
+
+    if (mounted) {
+      setState(() => _updateCount++);
+    }
+  }
+
+  // ── Trip control ──
 
   Future<void> _toggleTrip() async {
     if (_isTripActive) {
       final result = await BusService.endTrip();
       if (result['success'] == true) {
-        _stopAutoUpdate();
-        setState(() => _isTripActive = false);
+        _stopGpsTracking();
+        setState(() {
+          _isTripActive = false;
+          _lastPosition = null;
+          _updateCount = 0;
+        });
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('Trip ended.'), backgroundColor: Colors.orange),
@@ -677,12 +802,11 @@ class _DriverDashboardState extends State<_DriverDashboard> {
     } else {
       final result = await BusService.startTrip();
       if (result['success'] == true) {
-        _startAutoUpdate();
         setState(() => _isTripActive = true);
-        _sendLocationUpdate();
+        _startGpsTracking();
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Trip started!'), backgroundColor: Colors.green),
+            const SnackBar(content: Text('Trip started! GPS tracking active.'), backgroundColor: Colors.green),
           );
         }
       } else {
@@ -696,44 +820,7 @@ class _DriverDashboardState extends State<_DriverDashboard> {
     _loadMyBus();
   }
 
-  Future<void> _sendLocationUpdate() async {
-    if (_isSending || _myBus == null) return;
-    setState(() => _isSending = true);
-
-    // Use route stop coordinates as fallback location
-    double lat = 25.3770;
-    double lng = 51.4870;
-
-    if (_myBus!.route != null) {
-      final stopMatch = _myBus!.route!.stops.where((s) => s.name == _currentStop);
-      if (stopMatch.isNotEmpty) {
-        lat = stopMatch.first.lat;
-        lng = stopMatch.first.lng;
-      }
-    }
-
-    final success = await BusService.updateLocation(
-      latitude: lat,
-      longitude: lng,
-      currentStop: _currentStop,
-      nextStop: _nextStop,
-      status: _selectedStatus,
-      occupancy: _selectedOccupancy,
-    );
-
-    if (mounted) {
-      setState(() => _isSending = false);
-      if (success) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Location updated'),
-            duration: Duration(seconds: 1),
-            backgroundColor: Colors.green,
-          ),
-        );
-      }
-    }
-  }
+  // ── Build ──
 
   @override
   Widget build(BuildContext context) {
@@ -892,31 +979,61 @@ class _DriverDashboardState extends State<_DriverDashboard> {
                       ),
                       const SizedBox(height: 16),
 
-                      // Controls (only when trip active)
+                      // GPS status card (when trip active)
                       if (_isTripActive) ...[
-                        // Status selector
                         Card(
                           shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(12)),
+                          color: _gpsError ? Colors.red[50] : Colors.green[50],
                           child: Padding(
                             padding: const EdgeInsets.all(16),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
+                            child: Row(
                               children: [
-                                const Text('Status',
-                                    style: TextStyle(
-                                        fontWeight: FontWeight.bold, fontSize: 14)),
-                                const SizedBox(height: 8),
-                                Wrap(
-                                  spacing: 8,
-                                  children: [
-                                    _statusChip('on_route', 'On Route', Icons.route),
-                                    _statusChip(
-                                        'at_stop', 'At Stop', Icons.location_on),
-                                    _statusChip(
-                                        'waiting', 'Waiting', Icons.hourglass_empty),
-                                  ],
+                                Icon(
+                                  _gpsError ? Icons.gps_off : Icons.gps_fixed,
+                                  color: _gpsError ? Colors.red : Colors.green,
+                                  size: 28,
                                 ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        _gpsError ? 'GPS Error' : 'GPS Active',
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          color: _gpsError ? Colors.red : Colors.green[800],
+                                        ),
+                                      ),
+                                      if (_gpsError)
+                                        Text(_gpsErrorMsg,
+                                            style: TextStyle(fontSize: 12, color: Colors.red[700])),
+                                      if (!_gpsError && _lastPosition != null)
+                                        Text(
+                                          '${_lastPosition!.latitude.toStringAsFixed(5)}, '
+                                          '${_lastPosition!.longitude.toStringAsFixed(5)}',
+                                          style: TextStyle(fontSize: 12, color: Colors.green[700]),
+                                        ),
+                                      if (!_gpsError)
+                                        Text(
+                                          'Updates sent: $_updateCount',
+                                          style: TextStyle(fontSize: 11, color: Colors.grey[600]),
+                                        ),
+                                    ],
+                                  ),
+                                ),
+                                if (!_gpsError && _currentStop.isNotEmpty)
+                                  Column(
+                                    crossAxisAlignment: CrossAxisAlignment.end,
+                                    children: [
+                                      Text('Near:', style: TextStyle(fontSize: 10, color: Colors.grey[500])),
+                                      Text(
+                                        _currentStop,
+                                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                                      ),
+                                    ],
+                                  ),
                               ],
                             ),
                           ),
@@ -953,117 +1070,38 @@ class _DriverDashboardState extends State<_DriverDashboard> {
                         ),
                         const SizedBox(height: 12),
 
-                        // Current / Next stop
-                        if (_myBus!.route != null) ...[
-                          Card(
-                            shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12)),
-                            child: Padding(
-                              padding: const EdgeInsets.all(16),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  const Text('Stops',
-                                      style: TextStyle(
-                                          fontWeight: FontWeight.bold, fontSize: 14)),
-                                  const SizedBox(height: 8),
-                                  DropdownButtonFormField<String>(
-                                    value: _myBus!.route!.stops
-                                            .any((s) => s.name == _currentStop)
-                                        ? _currentStop
-                                        : _myBus!.route!.stops.first.name,
-                                    decoration: const InputDecoration(
-                                      labelText: 'Current Stop',
-                                      border: OutlineInputBorder(),
-                                      isDense: true,
-                                    ),
-                                    items: _myBus!.route!.stops.map((stop) {
-                                      return DropdownMenuItem(
-                                        value: stop.name,
-                                        child: Text(stop.name, overflow: TextOverflow.ellipsis),
-                                      );
-                                    }).toList(),
-                                    onChanged: (val) {
-                                      if (val != null) {
-                                        setState(() {
-                                          _currentStop = val;
-                                          // Auto-advance next stop
-                                          final stops = _myBus!.route!.stops;
-                                          final idx = stops
-                                              .indexWhere((s) => s.name == val);
-                                          if (idx >= 0 &&
-                                              idx < stops.length - 1) {
-                                            _nextStop = stops[idx + 1].name;
-                                          }
-                                        });
-                                      }
-                                    },
-                                  ),
-                                  const SizedBox(height: 12),
-                                  DropdownButtonFormField<String>(
-                                    value: _myBus!.route!.stops
-                                            .any((s) => s.name == _nextStop)
-                                        ? _nextStop
-                                        : (_myBus!.route!.stops.length > 1
-                                            ? _myBus!.route!.stops[1].name
-                                            : _myBus!.route!.stops.first.name),
-                                    decoration: const InputDecoration(
-                                      labelText: 'Next Stop',
-                                      border: OutlineInputBorder(),
-                                      isDense: true,
-                                    ),
-                                    items: _myBus!.route!.stops.map((stop) {
-                                      return DropdownMenuItem(
-                                        value: stop.name,
-                                        child: Text(stop.name, overflow: TextOverflow.ellipsis),
-                                      );
-                                    }).toList(),
-                                    onChanged: (val) {
-                                      if (val != null) {
-                                        setState(() => _nextStop = val);
-                                      }
-                                    },
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 16),
-                        ],
-
-                        // Send update button
-                        SizedBox(
-                          width: double.infinity,
-                          child: ElevatedButton.icon(
-                            onPressed: _isSending ? null : _sendLocationUpdate,
-                            icon: _isSending
-                                ? const SizedBox(
-                                    width: 16,
-                                    height: 16,
-                                    child: CircularProgressIndicator(
-                                      strokeWidth: 2,
-                                      color: Colors.white,
-                                    ),
-                                  )
-                                : const Icon(Icons.send),
-                            label: Text(
-                              _isSending ? 'Sending...' : 'Send Update Now',
-                              style: const TextStyle(fontWeight: FontWeight.bold),
-                            ),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: primaryMaroon,
-                              foregroundColor: Colors.white,
-                              padding: const EdgeInsets.symmetric(vertical: 14),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
-                              ),
+                        // Status selector
+                        Card(
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12)),
+                          child: Padding(
+                            padding: const EdgeInsets.all(16),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text('Status',
+                                    style: TextStyle(
+                                        fontWeight: FontWeight.bold, fontSize: 14)),
+                                const SizedBox(height: 8),
+                                Wrap(
+                                  spacing: 8,
+                                  children: [
+                                    _statusChip('on_route', 'On Route', Icons.route),
+                                    _statusChip(
+                                        'at_stop', 'At Stop', Icons.location_on),
+                                    _statusChip(
+                                        'waiting', 'Waiting', Icons.hourglass_empty),
+                                  ],
+                                ),
+                              ],
                             ),
                           ),
                         ),
-                        const SizedBox(height: 8),
+                        const SizedBox(height: 12),
+
                         Center(
                           child: Text(
-                            'Auto-updates every 30 seconds while trip is active',
+                            'Live GPS location is sent automatically every ${_sendIntervalSeconds}s',
                             style: TextStyle(fontSize: 11, color: Colors.grey[500]),
                           ),
                         ),
