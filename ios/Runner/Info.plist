@@ -56,5 +56,7 @@
 	<string>QU Community needs your location to provide continuous bus tracking while driving.</string>
 	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
 	<string>QU Community needs your location to show your position on the bus map and provide continuous bus tracking while driving.</string>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 </dict>
 </plist>
