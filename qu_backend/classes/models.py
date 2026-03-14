@@ -42,10 +42,6 @@ class Course(models.Model):
     def __str__(self):
         return self.name
 
-    @property
-    def enrolled_count(self):
-        return self.enrollments.count()
-
 
 class Enrollment(models.Model):
     user = models.ForeignKey(
