@@ -9,9 +9,9 @@ class ApiService {
   // For local testing on iOS simulator / desktop use http://127.0.0.1:8000/api
   static String get baseUrl {
     if (kIsWeb) {
-      return 'http://qu-community-app.info/api';
+      return 'http://qu-community-app.info:8000/api';
     }
-    return 'http://qu-community-app.info/api';
+    return 'http://qu-community-app.info:8000/api';
   }
 
   // ── Token keys in SharedPreferences ──
