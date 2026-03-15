@@ -38,7 +38,7 @@ class _CalendarPageState extends State<CalendarPage> {
     });
 
     try {
-      final events = await ClassesService.getAllEvents();
+      final events = await ClassesService.getMyClassEvents();
       setState(() {
         _allEvents = events;
         _selectedEvents.value = _getEventsForDay(_selectedDay!);
