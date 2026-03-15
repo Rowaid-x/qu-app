@@ -71,13 +71,13 @@ class _CalendarPageState extends State<CalendarPage> {
     final end = start.add(const Duration(days: 16 * 7));
 
     const dayMap = {
-      'sunday': DateTime.sunday,
-      'monday': DateTime.monday,
-      'tuesday': DateTime.tuesday,
-      'wednesday': DateTime.wednesday,
-      'thursday': DateTime.thursday,
-      'friday': DateTime.friday,
-      'saturday': DateTime.saturday,
+      'sunday': DateTime.sunday,    'sun': DateTime.sunday,
+      'monday': DateTime.monday,    'mon': DateTime.monday,
+      'tuesday': DateTime.tuesday,  'tue': DateTime.tuesday,
+      'wednesday': DateTime.wednesday, 'wed': DateTime.wednesday,
+      'thursday': DateTime.thursday,'thu': DateTime.thursday,
+      'friday': DateTime.friday,    'fri': DateTime.friday,
+      'saturday': DateTime.saturday,'sat': DateTime.saturday,
     };
 
     for (final course in courses) {
