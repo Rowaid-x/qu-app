@@ -38,9 +38,19 @@ class _CalendarPageState extends State<CalendarPage> {
     });
 
     try {
-      final events = await ClassesService.getMyClassEvents();
+      // Fetch server events AND joined courses in parallel
+      final results = await Future.wait([
+        ClassesService.getMyClassEvents(),
+        ClassesService.getJoinedCourses(),
+      ]);
+      final serverEvents = results[0] as List<CalendarEvent>;
+      final joinedCourses = results[1] as List<Course>;
+
+      // Generate recurring class session events from course schedules
+      final scheduleEvents = _generateScheduleEvents(joinedCourses);
+
       setState(() {
-        _allEvents = events;
+        _allEvents = [...serverEvents, ...scheduleEvents];
         _selectedEvents.value = _getEventsForDay(_selectedDay!);
         _isLoading = false;
       });
@@ -49,6 +59,77 @@ class _CalendarPageState extends State<CalendarPage> {
         _isLoading = false;
       });
     }
+  }
+
+  /// Parse schedule strings like "Sunday 08:00-09:30" and generate
+  /// CalendarEvent objects for the next 16 weeks.
+  List<CalendarEvent> _generateScheduleEvents(List<Course> courses) {
+    final List<CalendarEvent> events = [];
+    final now = DateTime.now();
+    // Generate from start of current week to 16 weeks out
+    final start = now.subtract(Duration(days: now.weekday % 7));
+    final end = start.add(const Duration(days: 16 * 7));
+
+    const dayMap = {
+      'sunday': DateTime.sunday,
+      'monday': DateTime.monday,
+      'tuesday': DateTime.tuesday,
+      'wednesday': DateTime.wednesday,
+      'thursday': DateTime.thursday,
+      'friday': DateTime.friday,
+      'saturday': DateTime.saturday,
+    };
+
+    for (final course in courses) {
+      for (final slot in course.schedule) {
+        // Expected format: "Sunday 08:00-09:30"
+        final parts = slot.trim().split(' ');
+        if (parts.length < 2) continue;
+
+        final dayName = parts[0].toLowerCase();
+        final targetDay = dayMap[dayName];
+        if (targetDay == null) continue;
+
+        final timeParts = parts[1].split('-');
+        if (timeParts.length != 2) continue;
+
+        final startParts = timeParts[0].split(':');
+        final endParts = timeParts[1].split(':');
+        if (startParts.length != 2 || endParts.length != 2) continue;
+
+        final startHour = int.tryParse(startParts[0]) ?? 0;
+        final startMin = int.tryParse(startParts[1]) ?? 0;
+        final endHour = int.tryParse(endParts[0]) ?? 0;
+        final endMin = int.tryParse(endParts[1]) ?? 0;
+
+        // Walk each week and place the event on the right day
+        var cursor = start;
+        while (cursor.isBefore(end)) {
+          if (cursor.weekday == targetDay) {
+            final eventStart = DateTime(
+              cursor.year, cursor.month, cursor.day, startHour, startMin,
+            );
+            final eventEnd = DateTime(
+              cursor.year, cursor.month, cursor.day, endHour, endMin,
+            );
+            events.add(CalendarEvent(
+              id: 'sched_${course.id}_${cursor.millisecondsSinceEpoch}',
+              title: course.name,
+              description: '${course.instructor} — ${slot}',
+              location: course.location,
+              startTime: eventStart,
+              endTime: eventEnd,
+              type: EventType.classSession,
+              addedBy: course.instructor,
+              classId: course.id,
+              category: course.category,
+            ));
+          }
+          cursor = cursor.add(const Duration(days: 1));
+        }
+      }
+    }
+    return events;
   }
 
   List<CalendarEvent> _getEventsForDay(DateTime day) {
